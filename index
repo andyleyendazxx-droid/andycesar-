@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Asistencia QR - Simplificado</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body class="bg-gray-100 font-sans text-gray-800 p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto">
+        <header class="mb-8 flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-6 rounded-xl shadow-sm">
+            <div>
+                <h1 class="text-2xl font-bold text-blue-600">Control de Asistencia Estudiantil</h1>
+                <p class="text-gray-500 text-sm">Escaneo QR por cámara, gestión de alumnos y exportación de Backups</p>
+            </div>
+            <button onclick="exportarBackup()" class="bg-green-600 hover:bg-green-700 text-white font-semibold px-4 py-2 rounded-lg transition shadow-sm cursor-pointer">
+                📦 Exportar Backup (.js)
+            </button>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <div class="space-y-6">
+                <div class="bg-white p-6 rounded-xl shadow-sm">
+                    <h2 class="text-lg font-bold mb-4 flex items-center gap-2">📷 Lector de Cámara Móvil</h2>
+                    <div id="reader" class="w-full bg-gray-50 rounded-lg overflow-hidden border border-dashed border-gray-300"></div>
+                    <p class="text-xs text-gray-400 mt-2 text-center">Apunta la cámara al código QR de la lista del estudiante</p>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl shadow-sm">
+                    <h2 class="text-lg font-bold mb-2">📅 Seguimiento de Asistencias</h2>
+                    <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">Filtrar por Fecha:</label>
+                    <input type="date" id="fechaFiltro" class="w-full p-2 border rounded-lg mb-4 text-center font-bold text-gray-700">
+                    
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="font-semibold text-sm text-gray-600">Registros del día:</h3>
+                        <button onclick="modalAgregarAsistenciaManual()" class="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-2 py-1 rounded font-medium cursor-pointer">+ Manual</button>
+                    </div>
+
+                    <ul id="listaAsistencias" class="text-sm space-y-2 divide-y divide-gray-100 max-h-60 overflow-y-auto pr-1">
+                        </ul>
+                </div>
+            </div>
+
+            <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm overflow-hidden">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4">
+                    <h2 class="text-lg font-bold">👥 Listado de Estudiantes (<span id="contadorEstudiantes">0</span>)</h2>
+                    <button onclick="modalAgregarEstudiante()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition cursor-pointer">
+                        + Registrar Estudiante
+                    </button>
+                </div>
+                
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm border-collapse">
+                        <thead>
+                            <tr class="bg-gray-50 text-gray-500 uppercase text-xs border-b">
+                                <th class="p-3 text-center">Identificador QR</th>
+                                <th class="p-3">DNI / Datos</th>
+                                <th class="p-3">Género</th>
+                                <th class="p-3">Teléfono</th>
+                                <th class="p-3 text-center">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tablaEstudiantes" class="divide-y divide-gray-100">
+                            </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Base de datos inicial en memoria (20 registros base solicitados)
+        let estudiantes = [
+            { dni: "74839201", nombres: "Carlos Andrés", apellidos: "Mendoza Ortiz", genero: "M", telefono: "981234567" },
+            { dni: "45920183", nombres: "Ana Sofía", apellidos: "Benítez Silva", genero: "F", telefono: "945876123" },
+            { dni: "10293847", nombres: "Diego Alejandro", apellidos: "Castro Rivas", genero: "M", telefono: "912345678" },
+            { dni: "83746291", nombres: "Valeria Inés", apellidos: "Palacios Vega", genero: "F", telefono: "967890123" },
+            { dni: "29384756", nombres: "Mateo Sebastián", apellidos: "Flores Quispe", genero: "M", telefono: "934567890" },
+            { dni: "54637281", nombres: "Camila Belén", apellidos: "Paredes Luna", genero: "F", telefono: "921743658" },
+            { dni: "38291047", nombres: "Lucas Gabriel", apellidos: "Vargas Machuca", genero: "M", telefono: "976543210" },
+            { dni: "19283746", nombres: "Martina Paz", apellidos: "Navarro Ríos", genero: "F", telefono: "954123789" },
+            { dni: "67482910", nombres: "Nicolás Eduardo", apellidos: "Jiménez Fuentes", genero: "M", telefono: "983456217" },
+            { dni: "82910384", nombres: "Isabella Marie", apellidos: "Delgado Torres", genero: "F", telefono: "917283948" },
+            { dni: "47382910", nombres: "Santiago José", apellidos: "Morales Gutiérrez", genero: "M", telefono: "962834715" },
+            { dni: "91028374", nombres: "Valentina Luz", apellidos: "Rojas Espinoza", genero: "F", telefono: "941627384" },
+            { dni: "36251478", nombres: "Matías Alonso", apellidos: "Herrera Díaz", genero: "M", telefono: "935482196" },
+            { dni: "72819304", nombres: "Daniela Alejandra", apellidos: "Salazar Campos", genero: "F", telefono: "998712345" },
+            { dni: "58192037", nombres: "Joaquín Ignacio", apellidos: "Cárdenas Soto", genero: "M", telefono: "924815367" },
+            { dni: "20394817", nombres: "Gabriela Fernanda", apellidos: "Mendoza Reyes", genero: "F", telefono: "951364278" },
+            { dni: "84736251", nombres: "Tomás Agustín", apellidos: "Miranda Cruz", genero: "M", telefono: "973159482" },
+            { dni: "12547839", nombres: "Lucía Fernanda", apellidos: "Peña Villanueva", genero: "F", telefono: "919472835" },
+            { dni: "63748291", nombres: "Benjamín David", apellidos: "Solís Guerrero", genero: "M", telefono: "966284193" },
+            { dni: "49382716", nombres: "Elena Beatriz", apellidos: "Franco Córdoba", genero: "F", telefono: "943715826" }
+        ];
+
+        // Registro global de asistencias
+        let asistencias = [
+            { id: 1, dni: "74839201", fecha: "2026-06-09", hora: "08:15" },
+            { id: 2, dni: "45920183", fecha: "2026-06-09", hora: "08:22" }
+        ];
+
+        // Al iniciar la página
+        document.addEventListener("DOMContentLoaded", () => {
+            // Asignar la fecha actual del sistema por defecto
+            const hoy = new Date().toISOString().split('T')[0];
+            document.getElementById('fechaFiltro').value = hoy;
+
+            renderEstudiantes();
+            renderAsistencias();
+            initCamaraQR();
+
+            // Cambiar historial si cambia la fecha en el calendario
+            document.getElementById('fechaFiltro').addEventListener('change', renderAsistencias);
+        });
+
+        // --- RENDERIZAR TABLA DE ESTUDIANTES Y SUS QR ---
+        function renderEstudiantes() {
+            const tbody = document.getElementById('tablaEstudiantes');
+            document.getElementById('contadorEstudiantes').innerText = estudiantes.length;
+            tbody.innerHTML = '';
+
+            estudiantes.forEach((est, index) => {
+                // Crear fila de la tabla
+                const fila = document.createElement('tr');
+                fila.className = "hover:bg-gray-50 transition border-b border-gray-100";
+                
+                fila.innerHTML = `
+                    <td class="p-3 flex justify-center">
+                        <div id="qrcode-${est.dni}" class="p-1 bg-white border border-gray-200 rounded shadow-sm"></div>
+                    </td>
+                    <td class="p-3">
+                        <span class="block text-xs font-mono font-bold text-gray-400">DNI: ${est.dni}</span>
+                        <span class="font-bold text-gray-900">${est.apellidos}, ${est.nombres}</span>
+                    </td>
+                    <td class="p-3">
+                        <span class="px-2 py-0.5 rounded text-xs font-bold ${est.genero === 'M' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}">${est.genero}</span>
+                    </td>
+                    <td class="p-3 text-gray-600 font-mono text-xs">${est.telefono}</td>
+                    <td class="p-3 text-center space-x-2">
+                        <button onclick="modalEditarEstudiante(${index})" class="text-blue-600 hover:text-blue-900 font-semibold cursor-pointer">Editar</button>
+                        <button onclick="eliminarEstudiante(${index})" class="text-red-500 hover:text-red-700 font-semibold cursor-pointer">Eliminar</button>
+                    </td>
+                `;
+                tbody.appendChild(fila);
+
+                // Generar el código QR nativo dentro de la celda usando el DNI como valor cifrado
+                new QRCode(document.getElementById(`qrcode-${est.dni}`), {
+                    text: est.dni,
+                    width: 60,
+                    height: 60,
+                    colorDark : "#1e3a8a",
+                    colorLight : "#ffffff",
+                    correctLevel : QRCode.CorrectLevel.H
+                });
+            });
+        }
+
+        // --- RENDERIZAR HISTORIAL DE ASISTENCIAS CON ELIMINACIÓN ---
+        function renderAsistencias() {
+            const fechaSeleccionada = document.getElementById('fechaFiltro').value;
+            const lista = document.getElementById('listaAsistencias');
+            lista.innerHTML = '';
+
+            const filtrados = asistencias.filter(a => a.fecha === fechaSeleccionada);
+
+            if (filtrados.length === 0) {
+                lista.innerHTML = `<li class="text-gray-400 text-xs text-center py-4">Sin asistencias registradas para este día.</li>`;
+                return;
+            }
+
+            filtrados.forEach(asist => {
+                const est = estudiantes.find(e => e.dni === asist.dni);
+                const nombreCompleto = est ? `${est.apellidos}, ${est.nombres}` : "Estudiante Retirado/No Encontrado";
+                
+                const li = document.createElement('li');
+                li.className = "py-2.5 flex justify-between items-center text-xs border-b border-gray-50";
+                li.innerHTML = `
+                    <div class="pr-2">
+                        <p class="font-bold text-gray-800">${nombreCompleto}</p>
+                        <p class="text-gray-400 font-mono text-[10px]">DNI: ${asist.dni} • Hora: ${asist.hora}</p>
+                    </div>
+                    <button onclick="eliminarAsistencia(${asist.id})" class="text-red-400 hover:text-red-600 font-bold px-2 py-1 cursor-pointer" title="Eliminar Asistencia">✕</button>
+                `;
+                lista.appendChild(li);
+            });
+        }
+
+        // --- PROCESAR LA ASISTENCIA (CÁMARA O MANUAL) ---
+        function procesarAsistencia(dniEscaneado) {
+            const estudiante = estudiantes.find(e => e.dni === dniEscaneado);
+            const fechaActual = document.getElementById('fechaFiltro').value;
+            const horaActual = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+
+            if (!estudiante) {
+                Swal.fire({ title: 'Código Inválido', text: `El DNI ${dniEscaneado} no está registrado en la lista de alumnos.`, icon: 'error' });
+                return;
+            }
+
+            // Evitar duplicados el mismo día
+            const yaAsistio = asistencias.some(a => a.dni === dniEscaneado && a.fecha === fechaActual);
+            if (yaAsistio) {
+                Swal.fire({ title: 'Ya Registrado', text: `${estudiante.nombres} ya cuenta con asistencia hoy.`, icon: 'info', timer: 1500, showConfirmButton: false });
+                return;
+            }
+
+            // Registrar asistencia exitosa
+            asistencias.unshift({
+                id: Date.now(),
+                dni: dniEscaneado,
+                fecha: fechaActual,
+                hora: horaActual
+            });
+
+            renderAsistencias();
+
+            Swal.fire({
+                title: '¡Presente!',
+                text: `${estudiante.apellidos}, ${estudiante.nombres}`,
+                icon: 'success',
+                timer: 1500,
+                showConfirmButton: false
+            });
+        }
+
+        // --- INICIALIZAR LECTOR QR DE LA CÁMARA MÓVIL ---
+        function initCamaraQR() {
+            const html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
+                fps: 15, 
+                qrbox: { width: 220, height: 220 },
+                rememberLastUsedCamera: true,
+                supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA]
+            });
+
+            html5QrcodeScanner.render((decodedText) => {
+                // Al detectar el texto cifrado del QR (DNI) se ejecuta la asistencia
+                procesarAsistencia(decodedText.trim());
+            });
+        }
+
+        // --- FORMULARIOS INTERACTIVOS (CRUD ESTUDIANTES) ---
+        function modalAgregarEstudiante() {
+            Swal.fire({
+                title: 'Registrar Estudiante',
+                html: `
+                    <input id="swal-dni" class="swal2-input" placeholder="DNI (8 dígitos)" type="number">
+                    <input id="swal-nombres" class="swal2-input" placeholder="Nombres">
+                    <input id="swal-apellidos" class="swal2-input" placeholder="Apellidos">
+                    <select id="swal-genero" class="swal2-input">
+                        <option value="M">Masculino (M)</option>
+                        <option value="F">Femenino (F)</option>
+                    </select>
+                    <input id="swal-telefono" class="swal2-input" placeholder="Teléfono celular">
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'Añadir',
+                preConfirm: () => {
+                    const dni = document.getElementById('swal-dni').value.trim();
+                    const nombres = document.getElementById('swal-nombres').value.trim();
+                    const apellidos = document.getElementById('swal-apellidos').value.trim();
+                    const genero = document.getElementById('swal-genero').value;
+                    const telefono = document.getElementById('swal-telefono').value.trim();
+
+                    if (!dni || !nombres || !apellidos || !telefono) {
+                        Swal.showValidationMessage('Todos los campos son obligatorios');
+                    }
+                    if (estudiantes.some(e => e.dni === dni)) {
+                        Swal.showValidationMessage('Este DNI ya se encuentra registrado');
+                    }
+                    return { dni, nombres, apellidos, genero, telefono };
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    estudiantes.push(result.value);
+                    renderEstudiantes();
+                    Swal.fire('¡Éxito!', 'Estudiante guardado y QR generado.', 'success');
+                }
+            });
+        }
+
+        function modalEditarEstudiante(index) {
+            const est = estudiantes[index];
+            Swal.fire({
+                title: 'Modificar Datos',
+                html: `
+                    <input id="swal-dni" class="swal2-input" value="${est.dni}" disabled style="background:#e5e7eb; cursor:not-allowed;">
+                    <input id="swal-nombres" class="swal2-input" value="${est.nombres}" placeholder="Nombres">
+                    <input id="swal-apellidos" class="swal2-input" value="${est.apellidos}" placeholder="Apellidos">
+                    <select id="swal-genero" class="swal2-input">
+                        <option value="M" ${est.genero === 'M' ? 'selected' : ''}>Masculino (M)</option>
+                        <option value="F" ${est.genero === 'F' ? 'selected' : ''}>Femenino (F)</option>
+                    </select>
+                    <input id="swal-telefono" class="swal2-input" value="${est.telefono}" placeholder="Teléfono">
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'Actualizar',
+                preConfirm: () => {
+                    const nombres = document.getElementById('swal-nombres').value.trim();
+                    const apellidos = document.getElementById('swal-apellidos').value.trim();
+                    const genero = document.getElementById('swal-genero').value;
+                    const telefono = document.getElementById('swal-telefono').value.trim();
+
+                    if (!nombres || !apellidos || !telefono) {
+                        Swal.showValidationMessage('Por favor, complete los datos requeridos');
+                    }
+                    return { dni: est.dni, nombres, apellidos, genero, telefono };
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    estudiantes[index] = result.value;
+                    renderEstudiantes();
+                    renderAsistencias();
+                    Swal.fire('Actualizado', 'Datos guardados correctamente.', 'success');
+                }
+            });
+        }
+
+        function eliminarEstudiante(index) {
+            Swal.fire({
+                title: '¿Retirar estudiante?',
+                text: `Se borrarán los registros de ${estudiantes[index].nombres}.`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                confirmButtonText: 'Sí, eliminar',
+                cancelButtonText: 'Cancelar'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    estudiantes.splice(index, 1);
+                    renderEstudiantes();
+                    renderAsistencias();
+                    Swal.fire('Eliminado', 'El estudiante ha sido removido.', 'success');
+                }
+            });
+        }
+
+        // --- FORMULARIOS INTERACTIVOS (GESTIÓN DE ASISTENCIAS) ---
+        function modalAgregarAsistenciaManual() {
+            // Generar opciones de estudiantes dinámicamente para el formulario interactivo
+            let opcionesHtml = estudiantes.map(e => `<option value="${e.dni}">${e.apellidos}, ${e.nombres}</option>`).join('');
+            
+            Swal.fire({
+                title: 'Asistencia Manual',
+                html: `
+                    <select id="swal-asist-dni" class="swal2-input">
+                        <option value="" disabled selected>Seleccione Alumno</option>
+                        ${opcionesHtml}
+                    </select>
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'Registrar',
+                preConfirm: () => {
+                    const dni = document.getElementById('swal-asist-dni').value;
+                    if (!dni) Swal.showValidationMessage('Debe seleccionar un estudiante');
+                    return dni;
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    procesarAsistencia(result.value);
+                }
+            });
+        }
+
+        function eliminarAsistencia(id) {
+            Swal.fire({
+                title: '¿Eliminar asistencia?',
+                text: "Se borrará este registro de asistencia seleccionado.",
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                confirmButtonText: 'Sí, remover'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    asistencias = asistencias.filter(a => a.id !== id);
+                    renderAsistencias();
+                    Swal.fire('Quitado', 'Registro de asistencia eliminado.', 'success');
+                }
+            });
+        }
+
+        // --- EXPORTAR BACKUP (.JS) ---
+        function exportarBackup() {
+            const copiaSeguridad = {
+                fechaGeneracion: new Date().toLocaleString(),
+                totalEstudiantes: estudiantes.length,
+                estudiantes: estudiantes,
+                asistencias: asistencias
+            };
+
+            const dataStr = `// RESPALDO DE BASE DE DATOS DE ASISTENCIA\nconst BACKUP_SISTEMA = ${JSON.stringify(copiaSeguridad, null, 4)};`;
+            const blob = new Blob([dataStr], { type: 'application/javascript' });
+            const url = URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `backup_asistencia_${new Date().toISOString().split('T')[0]}.js`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
